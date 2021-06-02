@@ -1,3 +1,43 @@
+// Project State Management
+class ProjectState {
+  private listeners: any[] = []; // array of functions references
+  private projects: any[] = []; // it will store an array of projects
+  private static instance: ProjectState;
+
+  private constructor() {}
+
+  // Static methods are often utility functions, such as functions to create or clone objects, 
+  // whereas static properties are useful for caches, fixed-configuration, 
+  // or any other data you don't need to be replicated across instances.
+  static getInstance() {
+    if (this.instance) {
+      return this.instance;
+    }
+    this.instance = new ProjectState();
+    return this.instance;
+  }
+
+  addListener(listenerFn: Function) {
+    this.listeners.push(listenerFn);
+  }
+
+  addProject(title: string, description: string, numOfPeople: number) {
+    const newProject = {
+      id: Math.random().toString(), // This is not the best solution
+      title: title,
+      description: description,
+      people: numOfPeople
+    };
+    this.projects.push(newProject)
+    for (const listenerFn of this.listeners) {
+      listenerFn(this.projects.slice()); // new array
+    }
+  }
+}
+
+// global constant that can be use anywhere in the file so talking to this class it's super simple
+const projectState = ProjectState.getInstance();
+
 // validation
 interface Validatable {
   value: string | number;
@@ -56,18 +96,35 @@ class ProjectList {
   templateElement: HTMLTemplateElement;
   hostElement: HTMLDivElement;
   element: HTMLElement;
+  assignedProjects: any[];
 
   constructor(private type: 'active' | 'finished') {
     this.templateElement = document.getElementById('project-list')! as HTMLTemplateElement;
     this.hostElement = document.getElementById('app')! as HTMLDivElement;
+    this.assignedProjects = [];
 
     //import the content
     const importedNode = document.importNode(this.templateElement.content, true);
     this.element = importedNode.firstElementChild as HTMLElement;
     this.element.id = `${this.type}-projects`;
 
+    projectState.addListener((projects: any[]) => {
+      this.assignedProjects = projects;
+      this.renderProjects();
+    });
+
     this.attach();
     this.renderContent();
+  }
+
+  private renderProjects() {
+    const listEl = document.getElementById(`${this.type}-project-list`)! as HTMLUListElement;
+    for (const prjItem of this.assignedProjects) {
+      const listItem = document.createElement('li');
+      listItem.textContent = prjItem.title;
+      listEl?.appendChild(listItem);
+    }
+
   }
 
   private renderContent() {
@@ -158,6 +215,9 @@ class ProjectInput {
     const userInput = this.gatherUserInput();
     if (Array.isArray(userInput)) {
       const [title, descr, people] = userInput;
+
+      //creating a new project
+      projectState.addProject(title, descr, people);
       console.log(title, descr, people);
       this.clearInputs();
     }
