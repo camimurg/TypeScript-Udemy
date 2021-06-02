@@ -61,10 +61,10 @@ class ProjectList {
     this.templateElement = document.getElementById('project-list')! as HTMLTemplateElement;
     this.hostElement = document.getElementById('app')! as HTMLDivElement;
 
-    //import the contect
+    //import the content
     const importedNode = document.importNode(this.templateElement.content, true);
     this.element = importedNode.firstElementChild as HTMLElement;
-    this.element.id = `${this.type}-project`;
+    this.element.id = `${this.type}-projects`;
 
     this.attach();
     this.renderContent();
