@@ -14,14 +14,24 @@ class Project {
 }
 
 // Project State Management
-type Listener = (items: Project[]) => void; // we don't care about any value that listener function may return
+type Listener<T> = (items: T[]) => void; // we don't care about any value that listener function may return
 
-class ProjectState {
-  private listeners: Listener[] = []; // array of functions references
+class State<T> {
+  protected listeners: Listener<T>[] = []; // array of functions references
+
+  addListener(listenerFn: Listener<T>) {
+    this.listeners.push(listenerFn);
+  }
+}
+
+class ProjectState extends State<Project>{
+  
   private projects: Project[] = []; // it will store an array of projects
   private static instance: ProjectState;
 
-  private constructor() {}
+  private constructor() {
+    super();
+  }
 
   // Static methods are often utility functions, such as functions to create or clone objects, 
   // whereas static properties are useful for caches, fixed-configuration, 
@@ -32,10 +42,6 @@ class ProjectState {
     }
     this.instance = new ProjectState();
     return this.instance;
-  }
-
-  addListener(listenerFn: Listener) {
-    this.listeners.push(listenerFn);
   }
 
   addProject(title: string, description: string, numOfPeople: number) {
@@ -109,23 +115,80 @@ function autobind(
   return adjDescriptor;
 }
 
+// Component Base Class abstract class to make sure people never directly instantiate it, but it will always be used for inheritance
+  abstract class Component<T extends HTMLElement, U extends HTMLElement> {
+    templateElement: HTMLTemplateElement;
+    hostElement: T; 
+    element: U;
+    
+    constructor(
+      templateId: string,
+      hostElementId: string,
+      insertAtStart: boolean,
+      newElementId?: string,
+
+      ) {
+        this.templateElement = document.getElementById(templateId)! as HTMLTemplateElement;
+        this.hostElement = document.getElementById(hostElementId)! as T;
+
+        const importedNode = document.importNode(this.templateElement.content, true);
+        this.element = importedNode.firstElementChild as U;
+        if (newElementId) {
+          this.element.id = newElementId;
+        }
+
+        this.attach(insertAtStart)
+    }
+
+    private attach(insertAtBeginning: boolean) {
+      this.hostElement.insertAdjacentElement(
+        insertAtBeginning ? 'afterbegin' : 'beforeend',
+        this.element
+        );
+    }
+
+    // abstract methods so that the complete implementation is missing but we are forcing any class 
+    // inheriting from this component to have this method available 
+    // you cannot have a private abstract method..
+    abstract configure(): void;
+    abstract renderContent(): void;
+  }
+
+// ProjectItem class
+class ProjectItem extends Component<HTMLUListElement, HTMLLIElement> {
+  private project: Project;
+
+  constructor(hostId: string, project: Project) {
+    super('single-project', hostId, false, project.id);
+    this.project = project;
+
+    this.configure() 
+    this.renderContent() 
+  }
+
+  configure() {}
+
+  renderContent() {
+    this.element.querySelector('h2')!.textContent = this.project.title;
+    this.element.querySelector('h3')!.textContent = this.project.people.toString();
+    this.element.querySelector('p')!.textContent = this.project.description;
+  }
+}
+
+
 // ProjectList class
-class ProjectList {
-  templateElement: HTMLTemplateElement;
-  hostElement: HTMLDivElement;
-  element: HTMLElement;
+class ProjectList extends Component<HTMLDivElement, HTMLElement> {
   assignedProjects: Project[];
 
   constructor(private type: 'active' | 'finished') {
-    this.templateElement = document.getElementById('project-list')! as HTMLTemplateElement;
-    this.hostElement = document.getElementById('app')! as HTMLDivElement;
+    super('project-list', 'app', false, `${type}-projects`); // to call the constructor of the parent class
     this.assignedProjects = [];
 
-    //import the content
-    const importedNode = document.importNode(this.templateElement.content, true);
-    this.element = importedNode.firstElementChild as HTMLElement;
-    this.element.id = `${this.type}-projects`;
+    this.configure();
+    this.renderContent();
+  }
 
+  configure() {
     projectState.addListener((projects: Project[]) => {
       const relevantProjects = projects.filter(prj => {
         if (this.type === 'active') {
@@ -136,63 +199,45 @@ class ProjectList {
       this.assignedProjects = relevantProjects;
       this.renderProjects();
     });
+  }
 
-    this.attach();
-    this.renderContent();
+  renderContent() {
+    const listId = `${this.type}-project-list`;
+    this.element.querySelector('ul')!.id = listId;
+    this.element.querySelector('h2')!.textContent = this.type.toUpperCase() + ' PROJECTS';
   }
 
   private renderProjects() {
     const listEl = document.getElementById(`${this.type}-project-list`)! as HTMLUListElement;
     listEl.innerHTML = ''; // get rid of all the items and then rerender
     for (const prjItem of this.assignedProjects) {
-      const listItem = document.createElement('li');
-      listItem.textContent = prjItem.title;
-      listEl?.appendChild(listItem);
-    }
-
-  }
-
-  private renderContent() {
-    const listId = `${this.type}-project-list`;
-    this.element.querySelector('ul')!.id = listId;
-    this.element.querySelector('h2')!.textContent = this.type.toUpperCase() + ' PROJECTS';
-  }
-
-  private attach() {
-    this.hostElement.insertAdjacentElement('beforeend', this.element);
+      new ProjectItem(this.element.querySelector('ul')!.id, prjItem);
+    }  
   }
 }
 
 // ProjectInput Class
-class ProjectInput {
-  templateElement: HTMLTemplateElement;
-  hostElement: HTMLDivElement; //OR HTMLElement: <div id='app'><div/>
-  element: HTMLFormElement;
+class ProjectInput extends Component<HTMLDivElement, HTMLFormElement> {
   titleInputElement: HTMLInputElement;
   descriptionInputElement: HTMLInputElement;
   peopleInputElement: HTMLInputElement;
 
   constructor() {
-    // ! tell typescript that we are sure that we will find that id element in the dom.
-    //if not you can make an if statement
-    // FIRST APPROACH:
-    // this.templateElement = <HTMLTemplateElement>document.getElementById('project-input')!;
-    // SECOND APPROACH, better, but is the same thing as above
-    // you are saying TS that also get element by id return a type of HTMLTemplateElement
-    this.templateElement = document.getElementById('project-input')! as HTMLTemplateElement;
-    this.hostElement = document.getElementById('app')! as HTMLDivElement;
-
-    const importedNode = document.importNode(this.templateElement.content, true);
-    this.element = importedNode.firstElementChild as HTMLFormElement;
-    this.element.id = 'user-input';
+    super('project-input', 'app', true, 'user-input')
 
     this.titleInputElement = this.element.querySelector('#title') as HTMLInputElement;
     this.descriptionInputElement = this.element.querySelector('#description') as HTMLInputElement;
     this.peopleInputElement = this.element.querySelector('#people') as HTMLInputElement;
-
+    
     this.configure();
-    this.attach();
+    this.renderContent()
   }
+
+  configure() {
+    this.element.addEventListener('submit', this.submitHandler)
+  }
+  
+  renderContent() {}
 
   private clearInputs() {
     this.titleInputElement.value = "";
@@ -248,13 +293,6 @@ class ProjectInput {
     }
   }
 
-  private configure() {
-    this.element.addEventListener('submit', this.submitHandler)
-  }
-
-  private attach() {
-    this.hostElement.insertAdjacentElement('afterbegin', this.element)
-  }
 }
 
 const prjInput = new ProjectInput();
